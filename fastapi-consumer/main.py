@@ -2,7 +2,8 @@ from fastapi import FastAPI
 import asyncio
 from kafka import KafkaConsumer
 import json
-from produce_schema import ProduceMessage
+from models.Message import MessageSchema
+from config import collection
 from pydantic import ValidationError
 
 #constants
@@ -40,17 +41,17 @@ async def poll_consumer(consumer:KafkaConsumer):
     print(f"Started polling Kafka topic: {KAFKA_TOPIC}")
     try:
         while not stop_polling_event.is_set():
-            records = await asyncio.to_thread(consumer.poll, timeout_ms=1000)
+            records = await asyncio.to_thread(consumer.poll(), timeout_ms=1000)
             if records:
                 print(f"Polled {len(records)} record batches")
                 for record in records.values():
                     for message in record:
                         try:
                             print(f"Processing message from partition {message.partition} at offset {message.offset}")
-                            # message.value is already deserialized by value_deserializer
                             if message.value:
-                                validated_msg = ProduceMessage(**message.value)
-                                print(f"Received the message: {validated_msg.message} from the topic of {message.topic}")
+                                validated_msg = MessageSchema(**message.value)
+                                collection.insert_one(validated_msg.model_dump())
+                                print(f"Saved to MongoDB and Received the message: {validated_msg.message} from the topic of {message.topic}")
                         except ValidationError as ve:
                             print(f"Validation error for message from {message.topic}: {ve}")
                         except Exception as e:
