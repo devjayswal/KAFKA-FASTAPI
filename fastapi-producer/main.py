@@ -6,7 +6,7 @@ from produce_schema import ProduceMessage
 
 #Constants Section
 
-KAFKA_BROKER_URL = "localhost:9092"
+KAFKA_BROKER_URL = "127.0.0.1:9092"
 KAFKA_TOPIC = "fastapi-topic"
 KAFKA_ADMIN_CLIENT = 'fastapi-admin-client'
 
@@ -15,7 +15,7 @@ async def lifespan(app: FastAPI):
 
     admin_client = KafkaAdminClient(
         bootstrap_servers=KAFKA_BROKER_URL,
-        client_id=KAFKA_ADMIN_CLIENT,
+        client_id=KAFKA_ADMIN_CLIENT
     )
     if not KAFKA_TOPIC in admin_client.list_topics():
         topic = NewTopic(

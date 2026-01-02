@@ -5,7 +5,7 @@ from fastapi import HTTPException
 import json
 
 #constants
-KAFKA_BROKER_URL = "localhost:9092"
+KAFKA_BROKER_URL = "127.0.0.1:9092"
 KAFKA_TOPIC = "fastapi-topic"
 PRODUCER_CLIENT_ID = "fastapi-producer"
 
@@ -17,6 +17,8 @@ producer = KafkaProducer(
     bootstrap_servers=KAFKA_BROKER_URL,
     value_serializer=serializer,
     client_id=PRODUCER_CLIENT_ID,
+    acks='all',              # Ensure all replicas acknowledge the message
+    retries=5                # Retry sending if it fails
 )
 
 

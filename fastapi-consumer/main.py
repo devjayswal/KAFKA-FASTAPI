@@ -7,7 +7,7 @@ from config import collection
 from pydantic import ValidationError
 
 #constants
-KAFKA_BROKER_URL = "localhost:9092"
+KAFKA_BROKER_URL = "127.0.0.1:9092"
 KAFKA_TOPIC = "fastapi-topic"
 CONSUMER_CONSUMER_ID = "fastapi-consumer"
 
@@ -27,54 +27,72 @@ def deserializer(message):
 
 
 def create_kafka_consumer():
-    consumer = KafkaConsumer(
-        KAFKA_TOPIC,
-        bootstrap_servers=KAFKA_BROKER_URL,
-        auto_offset_reset='earliest',
-        enable_auto_commit=True,
-        group_id=CONSUMER_CONSUMER_ID,
-        value_deserializer=deserializer,
-    )
-    return consumer
+    try:
+        print(f"Connecting to Kafka at {KAFKA_BROKER_URL}...")
+        consumer = KafkaConsumer(
+            KAFKA_TOPIC,
+            bootstrap_servers=KAFKA_BROKER_URL,
+            auto_offset_reset='earliest',
+            enable_auto_commit=True,
+            group_id=CONSUMER_CONSUMER_ID,
+            value_deserializer=deserializer,
+            request_timeout_ms=30000
+        )
+        print("Kafka Consumer created successfully!")
+        return consumer
+    except Exception as e:
+        print(f"Failed to create Kafka consumer: {e}")
+        return None
 
-async def poll_consumer(consumer:KafkaConsumer):
+async def poll_consumer():
     print(f"Started polling Kafka topic: {KAFKA_TOPIC}")
+    consumer = None
     try:
         while not stop_polling_event.is_set():
-            records = await asyncio.to_thread(consumer.poll(), timeout_ms=1000)
-            if records:
-                print(f"Polled {len(records)} record batches")
-                for record in records.values():
-                    for message in record:
-                        try:
-                            print(f"Processing message from partition {message.partition} at offset {message.offset}")
-                            if message.value:
-                                validated_msg = MessageSchema(**message.value)
-                                collection.insert_one(validated_msg.model_dump())
-                                print(f"Saved to MongoDB and Received the message: {validated_msg.message} from the topic of {message.topic}")
-                        except ValidationError as ve:
-                            print(f"Validation error for message from {message.topic}: {ve}")
-                        except Exception as e:
-                            print(f"Error processing message: {e}")
+            if consumer is None:
+                consumer = create_kafka_consumer()
+                if consumer is None:
+                    await asyncio.sleep(5)
+                    continue
+
+            try:
+                # Run poll in a thread to avoid blocking the event loop
+                records = await asyncio.to_thread(consumer.poll, timeout_ms=1000)
+                if records:
+                    print(f"Fetched {len(records)} batches from Kafka")
+                    for record in records.values():
+                        for message in record:
+                            try:
+                                if message.value:
+                                    validated_msg = MessageSchema(**message.value)
+                                    collection.insert_one(validated_msg.model_dump())
+                                    print(f"✅ SUCCESS: Saved to MongoDB: {validated_msg.message}")
+                            except Exception as e:
+                                print(f"❌ DATABASE ERROR: {e}")
+            except Exception as poll_error:
+                print(f"Poll error: {poll_error}")
+                consumer.close()
+                consumer = None  # Force recreation on next loop
+                await asyncio.sleep(2)
+            
             await asyncio.sleep(0.1)
     except Exception as e:
-        print(f"Error polling messages from Kafka: {e}")
+        print(f"Critical error in polling loop: {e}")
     finally:
         print("Stopping consumer polling")
-        consumer.close() 
+        if consumer:
+            consumer.close()
+
 tasklist = []
 @app.get("/trigger")
 async def trigger_polling():
     global tasklist
-    # Clean up finished tasks
     tasklist = [t for t in tasklist if not t.done()]
 
     if not tasklist:
-        stop_polling_event.clear() # reset the flag
-        consumer = create_kafka_consumer()
-        task = asyncio.create_task(poll_consumer(consumer=consumer))
+        stop_polling_event.clear()
+        task = asyncio.create_task(poll_consumer())
         tasklist.append(task)
-
         return {"message": "Started polling Kafka topic."}
     else:
         return {"message": "Polling is already running."}

@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 
 class MessageSettings(BaseSettings):
-    mongo_connection_string: str = "mongodb://localhost:27017"
+    mongo_connection_string: str = "mongodb+srv://devjayswal404:uo4HNLFdEh7TSIah@cluster0.hsgic4c.mongodb.net/?appName=Cluster0"
     mongo_database_name: str = "eda"
     mongo_collection_name: str = "messages"
 
